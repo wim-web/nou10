@@ -146,12 +146,12 @@ printf '%s' "$NOU10_SOURCE_SHA" > ../executed-sha`)
 }
 
 func TestGitRejectsUnsafeCheckoutBeforeScript(t *testing.T) {
-	for _, scenario := range []string{"dirty", "ignored conflict", "untracked conflict", "fetch failure", "symlink script", "untracked script", "nonexecutable script", "linked git", "rewritten URL"} {
+	for _, scenario := range []string{"dirty", "ignored conflict", "untracked conflict", "fetch failure", "symlink script", "untracked script", "untracked glob script", "nonexecutable script", "linked git", "rewritten URL"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newGitFixture(t)
 			sha := f.commit("touch ../executed")
 			switch scenario {
-			case "dirty", "ignored conflict", "untracked conflict", "untracked script", "rewritten URL":
+			case "dirty", "ignored conflict", "untracked conflict", "untracked script", "untracked glob script", "rewritten URL":
 				f.assertSuccess(sha)
 				if err := os.Remove(filepath.Join(f.dir, "executed")); err != nil {
 					t.Fatal(err)
@@ -181,9 +181,12 @@ func TestGitRejectsUnsafeCheckoutBeforeScript(t *testing.T) {
 				f.gitAt(f.remote, "add", ".")
 				f.gitAt(f.remote, "commit", "-m", "symlink")
 				sha = f.gitAt(f.remote, "rev-parse", "HEAD")
-			case "untracked script":
+			case "untracked script", "untracked glob script":
 				f.config.GitScript = "local.sh"
-				f.write(filepath.Join(f.config.InstallRoot, "local.sh"), "#!/bin/sh\ntouch ../executed\n", 0755)
+				if scenario == "untracked glob script" {
+					f.config.GitScript = "*.sh"
+				}
+				f.write(filepath.Join(f.config.InstallRoot, f.config.GitScript), "#!/bin/sh\ntouch ../executed\n", 0755)
 			case "nonexecutable script":
 				f.gitAt(f.remote, "update-index", "--chmod=-x", "deploy.sh")
 				f.gitAt(f.remote, "commit", "-m", "nonexecutable")

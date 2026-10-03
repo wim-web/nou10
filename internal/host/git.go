@@ -85,7 +85,7 @@ func (r Runner) runGit(ctx context.Context, request Request, root *os.Root, log 
 func (r Runner) gitURL() string { return "https://github.com/" + r.Config.Repository + ".git" }
 
 func (r Runner) git(ctx context.Context, log io.Writer, authenticated bool, args ...string) (string, error) {
-	options := []string{"-c", "core.hooksPath=/dev/null", "-c", "credential.helper=",
+	options := []string{"--literal-pathspecs", "-c", "core.hooksPath=/dev/null", "-c", "credential.helper=",
 		"-c", "http.extraHeader=", "-c", "http.followRedirects=false",
 		"-c", "protocol.allow=never", "-c", "protocol.https.allow=always"}
 	env := []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "LANG=C.UTF-8",
