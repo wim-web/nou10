@@ -57,11 +57,11 @@ case "$action" in
         CGO_ENABLED=0 GOOS="$platform" GOARCH="$arch" \
           go build -trimpath -ldflags "-s -w -X main.version=$version" \
           -o "$package_dir/nou10" ./cmd/nou10
-        cp README.md "$package_dir/"
+        cp LICENSE README.md "$package_dir/"
         cp -R docs examples "$package_dir/"
         # COPYFILE_DISABLE prevents macOS metadata entries in local builds.
         COPYFILE_DISABLE=1 tar -czf "$output_dir/nou10_${version}_${platform}_${arch}.tar.gz" \
-          -C "$package_dir" nou10 README.md docs examples
+          -C "$package_dir" nou10 LICENSE README.md docs examples
       done
     done
     (cd "$output_dir" && checksums > checksums.txt)
