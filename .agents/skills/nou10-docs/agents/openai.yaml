@@ -1,0 +1,3 @@
+interface:
+  display_name: "nou10 の文書作成"
+  short_description: "nou10 の文書をコードと重複させず、設計理由と最小限の入口に絞る"
