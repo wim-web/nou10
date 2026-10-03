@@ -1,0 +1,35 @@
+name: Deploy myapp
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: myapp-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.25.x'
+          cache: false
+      - name: Install nou10
+        env:
+          NOU10_REF: REPLACE_WITH_REVIEWED_COMMIT_SHA
+        run: go install "github.com/wim-web/nou10/cmd/nou10@$NOU10_REF"
+      - name: Request deployment
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          nou10 deploy --repository "$GITHUB_REPOSITORY" \
+            --application myapp --environment production --sha "$GITHUB_SHA" \
+            --source git --start-within 5m --wait --wait-timeout 15m

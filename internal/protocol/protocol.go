@@ -57,6 +57,8 @@ type Payload struct {
 	AssetID       int64     `json:"asset_id"`
 	SHA256        string    `json:"sha256"`
 	StartBefore   time.Time `json:"start_before"`
+	// Omit for schema 1 to preserve fingerprints already stored in host ledgers.
+	Source string `json:"source,omitempty"`
 }
 
 type Deployment struct {
@@ -142,22 +144,33 @@ func Parse(d Deployment) (Payload, error) {
 
 func (p Payload) Validate() error {
 	switch {
-	case p.SchemaVersion != 1:
+	case p.SchemaVersion != 1 && p.SchemaVersion != 2:
 		return errors.New("unsupported schema_version")
 	case len(p.RequestID) == 0 || len(p.RequestID) > 256 || strings.ContainsAny(p.RequestID, "\x00\r\n"):
 		return errors.New("invalid request_id")
 	case !ValidName(p.Application):
 		return errors.New("invalid application")
-	case p.ReleaseID <= 0 || p.AssetID <= 0:
-		return errors.New("release_id and asset_id must be positive")
-	case !digestPattern.MatchString(p.SHA256):
-		return errors.New("sha256 must be 64 lowercase hex characters")
 	case p.StartBefore.IsZero():
 		return errors.New("start_before is required")
 	}
 	_, offset := p.StartBefore.Zone()
 	if offset != 0 {
 		return errors.New("start_before must be UTC")
+	}
+	if p.SchemaVersion == 2 {
+		if p.Source != "git" || p.ReleaseID != 0 || p.AssetID != 0 || p.SHA256 != "" {
+			return errors.New("schema 2 requires source git without release_id, asset_id or sha256")
+		}
+	} else {
+		if p.Source != "" {
+			return errors.New("schema 1 does not accept source")
+		}
+		if p.ReleaseID <= 0 || p.AssetID <= 0 {
+			return errors.New("release_id and asset_id must be positive")
+		}
+		if !digestPattern.MatchString(p.SHA256) {
+			return errors.New("sha256 must be 64 lowercase hex characters")
+		}
 	}
 	return nil
 }

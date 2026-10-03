@@ -11,4 +11,4 @@ for package in host agent; do
 done
 chmod 0755 "$test_dir" "$test_dir/host.test" "$test_dir/agent.test"
 docker run --rm --platform "linux/$arch" -v "$test_dir:/artifacts:ro" ubuntu:24.04 sh -ec \
-  'setpriv --reuid=65534 --regid=65534 --clear-groups /artifacts/host.test -test.v; setpriv --reuid=65534 --regid=65534 --clear-groups /artifacts/agent.test -test.run "^TestNativeAgentIntegration$" -test.v'
+  'apt-get update -qq; apt-get install -y -qq --no-install-recommends git ca-certificates; setpriv --reuid=65534 --regid=65534 --clear-groups /artifacts/host.test -test.v; setpriv --reuid=65534 --regid=65534 --clear-groups /artifacts/agent.test -test.run "^TestNativeAgentIntegration$" -test.v'

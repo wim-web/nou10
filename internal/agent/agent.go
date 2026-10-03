@@ -156,21 +156,34 @@ func (a *Agent) finish(key, phase, status, summary string) error {
 }
 
 func (a *Agent) execute(ctx context.Context, e *ledger.Entry) error {
+	gitSource := e.Payload.Source == "git"
+	if gitSource != (a.Config.GitScript != "") {
+		return a.finish(e.Key, "done", "error", "source does not match host configuration (git_script selects Git mode)")
+	}
 	jobDir := filepath.Join(a.Config.StateDir, "jobs", strconv.FormatInt(e.Deployment.ID, 10))
 	filename := filepath.Join(jobDir, "bundle.tgz")
+	if gitSource {
+		filename = ""
+	}
 	if e.Phase != "starting" {
-		if err := a.update(func(st *ledger.State) error { st.Entries[e.Key].Phase = "downloading"; return nil }); err != nil {
-			return err
-		}
-		if err := a.prepare(ctx, e, jobDir, filename); err != nil {
-			var invalid *invalidBundle
-			if errors.As(err, &invalid) || github.Permanent(err) {
-				return a.finish(e.Key, "done", "error", err.Error())
+		if gitSource {
+			if err := os.MkdirAll(jobDir, 0700); err != nil {
+				return &storageError{err}
 			}
-			return err
+		} else {
+			if err := a.update(func(st *ledger.State) error { st.Entries[e.Key].Phase = "downloading"; return nil }); err != nil {
+				return err
+			}
+			if err := a.prepare(ctx, e, jobDir, filename); err != nil {
+				var invalid *invalidBundle
+				if errors.As(err, &invalid) || github.Permanent(err) {
+					return a.finish(e.Key, "done", "error", err.Error())
+				}
+				return err
+			}
 		}
 		if !a.now().Before(e.Payload.StartBefore) {
-			return a.finish(e.Key, "done", "error", "start deadline expired during bundle preparation")
+			return a.finish(e.Key, "done", "error", "start deadline expired during preparation")
 		}
 		if err := a.update(func(st *ledger.State) error {
 			st.Entries[e.Key].BundlePath = filename
@@ -198,11 +211,17 @@ func (a *Agent) execute(ctx context.Context, e *ledger.Entry) error {
 	if err != nil {
 		return &storageError{err}
 	}
-	request := host.Request{BundlePath: filename, JobDir: jobDir, SourceSHA: e.Deployment.SHA, DeploymentID: e.Deployment.ID}
-	if st.LastSuccess != "" {
+	request := host.Request{Source: e.Payload.Source, BundlePath: filename, JobDir: jobDir, SourceSHA: e.Deployment.SHA, DeploymentID: e.Deployment.ID}
+	if !gitSource && st.LastSuccess != "" {
 		previous := st.Entries[st.LastSuccess]
-		if previous == nil || previous.Status != "success" || previous.BundlePath == "" {
+		if previous == nil || previous.Status != "success" {
 			return &storageError{errors.New("invalid last successful deployment reference")}
+		}
+		if previous.Payload.Source == "git" {
+			return a.finish(e.Key, "done", "error", "cannot resume bundle installation history after a Git deployment")
+		}
+		if previous.BundlePath == "" {
+			return &storageError{errors.New("missing last successful bundle path")}
 		}
 		request.PreviousJobDir = filepath.Dir(previous.BundlePath)
 	}

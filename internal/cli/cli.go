@@ -26,6 +26,8 @@ const usage = `nou10: pull-based deployments through GitHub
 Usage:
   nou10 agent   --config /etc/nou10/config.yml
   nou10 deploy  --repository owner/repo --application app --environment production
+                --sha COMMIT --source git [--wait]
+  nou10 deploy  --repository owner/repo --application app --environment production
                 --sha COMMIT --release-id ID --asset-id ID --sha256 HASH [--wait]
   nou10 status  --repository owner/repo --deployment-id ID [--wait]
   nou10 doctor  --config /etc/nou10/config.yml
@@ -102,7 +104,7 @@ func deploy(ctx context.Context, args []string, out, errOut io.Writer) error {
 	f := flags("deploy", errOut)
 	var remote remoteFlags
 	remote.bind(f)
-	var app, env, task, sha, digest, requestID, startBefore string
+	var app, env, task, sha, digest, requestID, startBefore, source string
 	var releaseID, assetID int64
 	var wait bool
 	var waitTimeout, startWithin, poll time.Duration
@@ -110,6 +112,7 @@ func deploy(ctx context.Context, args []string, out, errOut io.Writer) error {
 	f.StringVar(&env, "environment", "", "exact target environment")
 	f.StringVar(&task, "task", protocol.DefaultTask, "deployment task")
 	f.StringVar(&sha, "sha", "", "full 40-character source commit SHA")
+	f.StringVar(&source, "source", "bundle", "bundle (Release asset) or git (host checkout and configured git_script)")
 	f.StringVar(&digest, "sha256", "", "tgz SHA-256 (lowercase hex)")
 	f.StringVar(&requestID, "request-id", "", "idempotency key (defaults to GHA run/attempt/target)")
 	f.StringVar(&startBefore, "start-before", "", "explicit RFC3339 UTC start deadline")
@@ -148,6 +151,13 @@ func deploy(ctx context.Context, args []string, out, errOut io.Writer) error {
 		}
 	}
 	p := protocol.Payload{SchemaVersion: 1, RequestID: requestID, Application: app, ReleaseID: releaseID, AssetID: assetID, SHA256: digest, StartBefore: deadline}
+	switch source {
+	case "git":
+		p.SchemaVersion, p.Source = 2, "git"
+	case "bundle":
+	default:
+		return errors.New("--source must be bundle or git")
+	}
 	if err := p.Validate(); err != nil {
 		return err
 	}
@@ -158,12 +168,14 @@ func deploy(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if err != nil {
 		return err
 	}
-	asset, err := c.FindAsset(ctx, releaseID, assetID)
-	if err != nil {
-		return err
-	}
-	if asset.State != "uploaded" || filepath.Ext(asset.Name) != ".tgz" || asset.Size <= 0 {
-		return errors.New("asset must be a fully uploaded tgz in the specified release")
+	if source == "bundle" {
+		asset, err := c.FindAsset(ctx, releaseID, assetID)
+		if err != nil {
+			return err
+		}
+		if asset.State != "uploaded" || filepath.Ext(asset.Name) != ".tgz" || asset.Size <= 0 {
+			return errors.New("asset must be a fully uploaded tgz in the specified release")
+		}
 	}
 	d, err := c.CreateDeployment(ctx, protocol.CreateDeployment{Ref: sha, Environment: env, Task: task, AutoMerge: false, RequiredContexts: []string{}, Payload: p})
 	if err != nil {

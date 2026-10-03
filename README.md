@@ -1,7 +1,7 @@
 # nou10
 
 GitHub を介して Linux ホストへ配備する、Go 製のデプロイエージェントです。
-外向き通信で GitHub Deployments の要求と Release の配布物を取得し、AppSpec に従って配備します。
+外向き通信で GitHub Deployments の要求を受け取り、Git のソースまたは Release の配布物を使って配備します。
 SSH や受信ポートを用意せずに、GitHub-hosted Actions から配備したい場合を対象にしています。
 
 ## 利用開始
@@ -17,7 +17,7 @@ go build -trimpath -o bin/nou10 ./cmd/nou10
 運用前に [設計と運用上の前提](docs/design.md) を確認してください。
 
 1. 配備先に専用ユーザー `nou10` を用意し、Linux 用バイナリを `/usr/local/bin/nou10` に置きます。
-2. [ホスト設定例](examples/config.yml) を `/etc/nou10/myapp-production.yml` に置き、対象アプリに合わせて編集します。
+2. [Git 用](examples/git-config.yml) または [Release 配布物用](examples/config.yml) のホスト設定例を `/etc/nou10/myapp-production.yml` に置き、対象アプリに合わせて編集します。
    `install_root`・`state_dir`・`lock_dir` のディレクトリを `nou10` 所有で作成し、
    `state_dir` は `0700`、ほかの2つは `0755` にします。設定ファイルも `nou10` が読めるようにします。
 3. 対象リポジトリに限定した fine-grained PAT を設定の `token_file` に置き、所有者を `nou10`、モードを `0600` にします。
@@ -30,7 +30,10 @@ go build -trimpath -o bin/nou10 ./cmd/nou10
 初回は `initialized deployment baseline; ready for new requests` のログを確認してから要求を作成します。
 初期化前から存在する要求は配備の対象になりません。
 
-アプリ側では [AppSpec とフック](examples/bundle) を `deploy/` に、
+ホストでソースからビルドする場合は、Git と [実行スクリプト](examples/git-deploy.sh) を用意し、
+[Git 用 workflow](examples/deploy-git.yml) をアプリの `.github/workflows/deploy.yml` にコピーして調整します。
+
+ビルド済みの配布物を使う場合は、[AppSpec とフック](examples/bundle) を `deploy/` に、
 [配備 workflow](examples/deploy.yml) を `.github/workflows/deploy.yml` にコピーして調整します。
 サービスの設定は [アプリ用 unit](examples/systemd/myapp.service) と
 [sudoers の例](examples/systemd/myapp.sudoers) を参照してください。

@@ -25,6 +25,7 @@ type Result struct {
 	Unknown        bool
 }
 type Request struct {
+	Source                        string
 	BundlePath, JobDir, SourceSHA string
 	DeploymentID                  int64
 	PreviousJobDir                string
@@ -35,6 +36,11 @@ type Executor interface {
 type Runner struct{ Config config.Config }
 
 func Check(_ context.Context, c config.Config) error {
+	if c.GitScript != "" {
+		if _, err := exec.LookPath("git"); err != nil {
+			return errors.New("Git source requires git on the host")
+		}
+	}
 	root, err := openInstallRoot(c.InstallRoot)
 	if err != nil {
 		return fmt.Errorf("open install_root: %w", err)
@@ -83,6 +89,12 @@ func (r Runner) Run(parent context.Context, request Request) Result {
 		return fail("cannot open install_root", err)
 	}
 	defer root.Close()
+	if request.Source == "git" {
+		return r.runGit(ctx, request, root, log)
+	}
+	if request.Source != "" || r.Config.GitScript != "" {
+		return fail("source does not match host configuration", errors.New("invalid source"))
+	}
 	archive := filepath.Join(request.JobDir, "archive")
 	limits := bundle.Limits{ExpandedBytes: r.Config.MaxExpandedBytes, Files: r.Config.MaxFiles}
 	if err := bundle.Extract(ctx, request.BundlePath, request.SourceSHA, archive, limits); err != nil {
@@ -273,15 +285,7 @@ func (r Runner) runEvent(ctx context.Context, request Request, archive, event st
 			"APPLICATION_NAME=" + r.Config.Application, "DEPLOYMENT_ID=" + strconv.FormatInt(request.DeploymentID, 10),
 			"DEPLOYMENT_GROUP_ID=" + r.Config.Target().Key(), "DEPLOYMENT_GROUP_NAME=" + r.Config.Application + "-" + r.Config.Environment,
 			"LIFECYCLE_EVENT=" + event, "NOU10_SOURCE_SHA=" + request.SourceSHA}
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		cmd.Cancel = func() error {
-			err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			if errors.Is(err, syscall.ESRCH) {
-				return os.ErrProcessDone
-			}
-			return err
-		}
-		cmd.WaitDelay = 5 * time.Second
+		processGroup(cmd)
 		err := cmd.Run()
 		interruptedRun := childCtx.Err() != nil
 		cancel()
@@ -305,4 +309,16 @@ func (r Runner) runEvent(ctx context.Context, request Request, archive, event st
 		}
 	}
 	return nil
+}
+
+func processGroup(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
+	cmd.WaitDelay = 5 * time.Second
 }

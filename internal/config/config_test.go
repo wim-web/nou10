@@ -74,3 +74,21 @@ func TestInstallRootBounds(t *testing.T) {
 		}
 	}
 }
+
+func TestGitScriptPath(t *testing.T) {
+	text := "repository: owner/repo\napplication: app\nenvironment: production\ntoken_file: /etc/nou10/token\ninstall_root: /srv/app\n"
+	path := filepath.Join(t.TempDir(), "config.yml")
+	for _, script := range []string{"deploy/production/deploy.sh", "../outside", "/bin/sh", ".", "deploy/../run", ".git/hooks/hook"} {
+		if err := os.WriteFile(path, []byte(text+"git_script: "+script+"\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		c, err := Load(path)
+		if script == "deploy/production/deploy.sh" {
+			if err != nil || c.GitScript != script {
+				t.Fatalf("%+v %v", c, err)
+			}
+		} else if err == nil {
+			t.Fatalf("accepted %q", script)
+		}
+	}
+}
