@@ -1,0 +1,84 @@
+# Copy to your application's .github/workflows/deploy.yml after adapting the
+# build command, Go version, architecture, deploy/ directory and pinned nou10 ref.
+name: Deploy myapp
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: myapp-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Test and package the exact checked-out commit
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          go test ./...
+          mkdir -p bundle/app bundle/scripts
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o bundle/app/myapp ./cmd/myapp
+          cp deploy/appspec.yml bundle/appspec.yml
+          cp deploy/scripts/*.sh bundle/scripts/
+          chmod 0755 bundle/scripts/*.sh
+          jq -n --arg sha "$SOURCE_SHA" '{source_sha: $sha}' > bundle/manifest.json
+          tar -czf bundle.tgz -C bundle appspec.yml manifest.json app scripts
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: deploy-bundle
+          path: bundle.tgz
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    environment: production
+    permissions:
+      contents: write
+      deployments: write
+    steps:
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.25.x'
+          cache: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: deploy-bundle
+      - name: Install the reviewed nou10 revision
+        env:
+          # Replace with a full, reviewed commit SHA or an immutable release tag.
+          NOU10_REF: REPLACE_WITH_REVIEWED_COMMIT_SHA
+        run: go install "github.com/wim-web/nou10/cmd/nou10@$NOU10_REF"
+      - name: Publish bundle, request deployment and wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tag="nou10-myapp-production-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          # Release creation/upload errors stop this step before any deployment request.
+          gh release create "$tag" bundle.tgz --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" --title "$tag" --notes "Deployment bundle for $SOURCE_SHA" --latest=false
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag")
+          release_id=$(jq -er '.id' <<< "$release")
+          asset_id=$(jq -er '.assets[] | select(.name == "bundle.tgz" and .state == "uploaded") | .id' <<< "$release")
+          sha256=$(sha256sum bundle.tgz | cut -d ' ' -f 1)
+          nou10 deploy --repository "$GITHUB_REPOSITORY" \
+            --application myapp --environment production --sha "$SOURCE_SHA" \
+            --release-id "$release_id" --asset-id "$asset_id" --sha256 "$sha256" \
+            --start-within 15m --wait --wait-timeout 30m

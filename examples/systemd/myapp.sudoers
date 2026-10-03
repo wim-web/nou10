@@ -1,0 +1,2 @@
+# Install with mode 0440 using visudo; adjust paths for your host.
+nou10 ALL=(root) NOPASSWD: /usr/bin/systemctl stop myapp.service, /usr/bin/systemctl restart myapp.service

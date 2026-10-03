@@ -1,0 +1,15 @@
+repository: owner/repository
+application: myapp
+environment: production
+task: deploy:nou10
+token_file: /etc/nou10/github-token
+poll_interval: 30s
+state_dir: /var/lib/nou10/myapp-production
+# All processes on this host must use the same lock directory.
+lock_dir: /run/nou10
+execution_timeout: 10m
+max_download_bytes: 536870912
+max_expanded_bytes: 2147483648
+max_files: 100000
+# Create this directory for the agent user. AppSpec destinations must stay here.
+install_root: /srv/myapp

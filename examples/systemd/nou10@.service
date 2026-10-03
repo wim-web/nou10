@@ -1,0 +1,25 @@
+[Unit]
+Description=nou10 deployment agent (%i)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=nou10
+Group=nou10
+UMask=0077
+RuntimeDirectory=nou10
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+StateDirectory=nou10/%i
+StateDirectoryMode=0700
+ExecStart=/usr/local/bin/nou10 agent --config /etc/nou10/%i.yml
+Restart=on-failure
+RestartSec=30s
+TimeoutStopSec=20s
+KillMode=control-group
+# The example application hooks use a narrow sudoers rule. Do not enable
+# NoNewPrivileges without replacing that application-specific mechanism.
+
+[Install]
+WantedBy=multi-user.target
