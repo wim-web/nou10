@@ -27,6 +27,8 @@ type Config struct {
 	MaxExpandedBytes int64         `yaml:"max_expanded_bytes"`
 	MaxFiles         int           `yaml:"max_files"`
 	InstallRoot      string        `yaml:"install_root"`
+	// Opt in to Git deployments; install_root is the persistent checkout.
+	GitScript string `yaml:"git_script"`
 }
 
 func (c Config) Target() protocol.Target {
@@ -69,6 +71,10 @@ func (c Config) Validate() error {
 	}
 	if filepath.Clean(c.InstallRoot) != c.InstallRoot || c.InstallRoot == "/" {
 		return errors.New("install_root must be a clean absolute directory other than /")
+	}
+	if c.GitScript != "" && (!filepath.IsLocal(c.GitScript) || filepath.Clean(c.GitScript) != c.GitScript ||
+		c.GitScript == "." || strings.ContainsAny(c.GitScript, "\\:\x00\r\n") || strings.EqualFold(strings.Split(c.GitScript, "/")[0], ".git")) {
+		return errors.New("git_script must be a clean relative file path outside .git")
 	}
 	for _, protected := range []string{c.StateDir, c.LockDir, c.TokenFile} {
 		if Contains(c.InstallRoot, protected) || Contains(protected, c.InstallRoot) {

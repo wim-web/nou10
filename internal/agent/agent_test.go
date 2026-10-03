@@ -38,12 +38,14 @@ func TestDownloadPreservesDiskErrors(t *testing.T) {
 }
 
 type fakeRunner struct {
-	runs   int
-	result host.Result
-	check  func()
+	requests []host.Request
+	runs     int
+	result   host.Result
+	check    func()
 }
 
-func (r *fakeRunner) Run(context.Context, host.Request) host.Result {
+func (r *fakeRunner) Run(_ context.Context, request host.Request) host.Result {
+	r.requests = append(r.requests, request)
 	r.runs++
 	if r.check != nil {
 		r.check()
@@ -275,5 +277,99 @@ func TestOldestFirstAndManualRedeploy(t *testing.T) {
 	}
 	if r.runs != 2 || fx.last(2) != "success" {
 		t.Fatal("new request with old asset was not executed")
+	}
+}
+
+func gitDeployment(id int64, request string, now time.Time) protocol.Deployment {
+	d := testutil.Deployment(id, request, now, nil)
+	p := protocol.Payload{SchemaVersion: 2, Source: "git", RequestID: request, Application: "app", StartBefore: now.Add(time.Minute)}
+	d.Payload, _ = json.Marshal(p)
+	return d
+}
+
+func TestGitDeploymentWithoutAssetsAndAcrossRestarts(t *testing.T) {
+	a, fx, runner := setup(t)
+	// An existing bundle deployment must not require resetting the ledger to use Git.
+	bundle := testutil.Deployment(1, "bundle", a.now(), fx.bundle)
+	fx.set(bundle)
+	if err := a.Step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	a.Config.GitScript = "deploy.sh"
+	one := gitDeployment(2, "git-one", a.now())
+	two := gitDeployment(3, "git-two", a.now())
+	fx.set(bundle, one, two)
+	fx.fail("success")
+	if err := a.Step(context.Background()); err == nil {
+		t.Fatal("expected report failure")
+	}
+	if runner.runs != 2 {
+		t.Fatal("Git did not run once")
+	}
+	if err := a.Store.Recover(a.now()); err != nil {
+		t.Fatal(err)
+	}
+	fx.fail("")
+	if err := a.Step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	duplicate := two
+	duplicate.ID = 4
+	fx.set(bundle, one, two, duplicate)
+	if err := a.Step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if runner.runs != 3 || fx.downloads != 1 || fx.last(2) != "success" || fx.last(3) != "success" || fx.last(4) != "success" {
+		t.Fatal("unexpected execution, bundle download or status")
+	}
+	for _, request := range runner.requests[1:] {
+		if request.Source != "git" || request.SourceSHA != testutil.SHA || request.BundlePath != "" || request.PreviousJobDir != "" {
+			t.Fatalf("wrong Git request: %+v", request)
+		}
+	}
+	st, _ := a.Store.Read()
+	if st.Held || st.LastSuccess != "request:git-two" {
+		t.Fatalf("wrong Git history: %+v", st)
+	}
+	// Bundle ownership history cannot silently be recreated after switching to Git.
+	a.Config.GitScript = ""
+	fx.set(bundle, one, two, duplicate, testutil.Deployment(5, "back-to-bundle", a.now(), fx.bundle))
+	if err := a.Step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if runner.runs != 3 || fx.last(5) != "error" {
+		t.Fatal("resumed stale bundle installation history")
+	}
+}
+
+func TestGitModeMustMatchHostAndHoldUnknownOutcome(t *testing.T) {
+	for _, scenario := range []string{"no opt in", "bundle on git host", "unknown", "expired"} {
+		t.Run(scenario, func(t *testing.T) {
+			a, fx, runner := setup(t)
+			d := gitDeployment(1, "git", a.now())
+			a.Config.GitScript = "deploy.sh"
+			switch scenario {
+			case "no opt in":
+				a.Config.GitScript = ""
+			case "bundle on git host":
+				d = testutil.Deployment(1, "bundle", a.now(), fx.bundle)
+			case "unknown":
+				runner.result = host.Result{State: "error", Unknown: true, Summary: "interrupted"}
+			case "expired":
+				d = gitDeployment(1, "git", a.now().Add(-time.Hour))
+			}
+			fx.set(d)
+			if err := a.Step(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			st, _ := a.Store.Read()
+			wantRuns := 0
+			if scenario == "unknown" {
+				wantRuns = 1
+			}
+			if runner.runs != wantRuns || fx.downloads != 0 || fx.last(1) != "error" || st.Held != (scenario == "unknown") {
+				t.Fatalf("wrong result for %s: %+v", scenario, st)
+			}
+		})
 	}
 }

@@ -1,0 +1,11 @@
+repository: owner/repository
+application: myapp
+environment: production
+token_file: /etc/nou10/github-token
+state_dir: /var/lib/nou10/myapp-production
+lock_dir: /run/nou10
+execution_timeout: 10m
+# Create this directory for the agent user; Git reuses it for every deployment.
+install_root: /srv/myapp/repository
+# Executable, tracked path in the repository. It runs with install_root as cwd.
+git_script: deploy.sh

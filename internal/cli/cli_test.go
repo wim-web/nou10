@@ -29,55 +29,70 @@ func TestDeployCLIWithExistingAssetAndWait(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "workflow-secret")
 	t.Setenv("GITHUB_RUN_ID", "1234")
 	t.Setenv("GITHUB_RUN_ATTEMPT", "2")
-	for _, final := range []string{"success", "failure"} {
-		t.Run(final, func(t *testing.T) {
-			var created protocol.CreateDeployment
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Header.Get("Authorization") != "Bearer workflow-secret" {
-					t.Error("missing workflow token")
-				}
-				switch {
-				case strings.HasSuffix(r.URL.Path, "/releases/10/assets"):
-					fmt.Fprint(w, `[{"id":20,"name":"bundle.tgz","state":"uploaded","size":100}]`)
-				case strings.HasSuffix(r.URL.Path, "/deployments"):
-					if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
-						t.Error(err)
-						w.WriteHeader(400)
-						return
+	for _, source := range []string{"bundle", "git"} {
+		for _, final := range []string{"success", "failure"} {
+			t.Run(source+"-"+final, func(t *testing.T) {
+				var created protocol.CreateDeployment
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Header.Get("Authorization") != "Bearer workflow-secret" {
+						t.Error("missing workflow token")
 					}
-					w.WriteHeader(201)
-					fmt.Fprintf(w, `{"id":30,"sha":%q}`, testutil.SHA)
-				case strings.HasSuffix(r.URL.Path, "/30/statuses"):
-					fmt.Fprintf(w, `[{"state":%q}]`, final)
-				default:
-					http.NotFound(w, r)
+					switch {
+					case strings.HasSuffix(r.URL.Path, "/releases/10/assets"):
+						if source == "git" {
+							t.Error("Git deploy queried release assets")
+						}
+						fmt.Fprint(w, `[{"id":20,"name":"bundle.tgz","state":"uploaded","size":100}]`)
+					case strings.HasSuffix(r.URL.Path, "/deployments"):
+						if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
+							t.Error(err)
+							w.WriteHeader(400)
+							return
+						}
+						w.WriteHeader(201)
+						fmt.Fprintf(w, `{"id":30,"sha":%q}`, testutil.SHA)
+					case strings.HasSuffix(r.URL.Path, "/30/statuses"):
+						fmt.Fprintf(w, `[{"state":%q}]`, final)
+					default:
+						http.NotFound(w, r)
+					}
+				}))
+				defer server.Close()
+				base, _ := url.Parse(server.URL)
+				oldTransport := http.DefaultTransport
+				http.DefaultTransport = roundTripper(func(r *http.Request) (*http.Response, error) {
+					clone := r.Clone(r.Context())
+					clone.URL.Scheme = base.Scheme
+					clone.URL.Host = base.Host
+					return oldTransport.RoundTrip(clone)
+				})
+				defer func() { http.DefaultTransport = oldTransport }()
+				var out bytes.Buffer
+				args := []string{"deploy", "--repository", "owner/repo", "--application", "app", "--environment", "production", "--sha", testutil.SHA,
+					"--source", source, "--wait"}
+				if source == "bundle" {
+					args = append(args, "--release-id", "10", "--asset-id", "20", "--sha256", strings.Repeat("a", 64))
 				}
-			}))
-			defer server.Close()
-			base, _ := url.Parse(server.URL)
-			oldTransport := http.DefaultTransport
-			http.DefaultTransport = roundTripper(func(r *http.Request) (*http.Response, error) {
-				clone := r.Clone(r.Context())
-				clone.URL.Scheme = base.Scheme
-				clone.URL.Host = base.Host
-				return oldTransport.RoundTrip(clone)
+				err := Run(context.Background(), args, &out, io.Discard, "test")
+				if (err == nil) != (final == "success") {
+					t.Fatalf("terminal %s: %v", final, err)
+				}
+				if err := created.Payload.Validate(); err != nil {
+					t.Fatal(err)
+				}
+				if source == "git" && (created.Payload.Source != "git" || created.Payload.SchemaVersion != 2) {
+					t.Fatal("not a Git request")
+				}
+				if created.AutoMerge || created.RequiredContexts == nil || len(created.RequiredContexts) != 0 || created.Ref != testutil.SHA || created.Task != protocol.DefaultTask || created.Payload.RequestID != "1234:2:"+testutil.Target().Key() {
+					t.Fatalf("wrong request: %+v", created)
+				}
+				if !strings.Contains(out.String(), `"deployment_id":30`) || strings.Contains(out.String(), "workflow-secret") {
+					t.Fatalf("bad output: %s", out.String())
+				}
 			})
-			defer func() { http.DefaultTransport = oldTransport }()
-			var out bytes.Buffer
-			args := []string{"deploy", "--repository", "owner/repo", "--application", "app", "--environment", "production", "--sha", testutil.SHA,
-				"--release-id", "10", "--asset-id", "20", "--sha256", strings.Repeat("a", 64), "--wait"}
-			err := Run(context.Background(), args, &out, io.Discard, "test")
-			if (err == nil) != (final == "success") {
-				t.Fatalf("terminal %s: %v", final, err)
-			}
-			if created.AutoMerge || created.RequiredContexts == nil || len(created.RequiredContexts) != 0 || created.Ref != testutil.SHA || created.Task != protocol.DefaultTask || created.Payload.RequestID != "1234:2:"+testutil.Target().Key() {
-				t.Fatalf("wrong request: %+v", created)
-			}
-			if !strings.Contains(out.String(), `"deployment_id":30`) || strings.Contains(out.String(), "workflow-secret") {
-				t.Fatalf("bad output: %s", out.String())
-			}
-		})
+		}
 	}
+
 }
 
 func TestWaitOnlySucceedsOnSuccess(t *testing.T) {
