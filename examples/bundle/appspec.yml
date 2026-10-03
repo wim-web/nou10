@@ -1,0 +1,18 @@
+version: 0.0
+os: linux
+files:
+  - source: app/
+    destination: /srv/myapp
+hooks:
+  ApplicationStop:
+    - location: scripts/stop.sh
+      timeout: 60
+  AfterInstall:
+    - location: scripts/after-install.sh
+      timeout: 30
+  ApplicationStart:
+    - location: scripts/start.sh
+      timeout: 60
+  ValidateService:
+    - location: scripts/validate.sh
+      timeout: 60

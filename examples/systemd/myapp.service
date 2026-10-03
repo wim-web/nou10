@@ -1,0 +1,15 @@
+[Unit]
+Description=Example application
+After=network.target
+
+[Service]
+User=nou10
+Group=nou10
+WorkingDirectory=/srv/myapp
+ExecStart=/srv/myapp/myapp
+Restart=on-failure
+NoNewPrivileges=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
