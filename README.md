@@ -69,7 +69,7 @@ CIのrace検査・vet・Linux配備テストが通ると、CGO無効・デバッ
 - `nou10_0.1.0_darwin_arm64.tar.gz`
 - `checksums.txt`（上記4ファイルのSHA-256）
 
-各アーカイブにはバイナリ、README、docs、examplesが入ります。`nou10 version` にrelease-pleaseが決めたバージョンを埋め込みます。
+各アーカイブにはバイナリ、LICENSE、README、docs、examplesが入ります。`nou10 version` にrelease-pleaseが決めたバージョンを埋め込みます。
 macOS版は要求作成・状態確認用で、agentの対応OSはLinuxです。
 
 通常のリリースはLatestに設定します。検証・ビルド・アップロードが失敗した場合はdraftを残し、
@@ -235,6 +235,10 @@ PATのDeployments: writeは要求作成にも使えます。
 
 設定・AppSpecの配備先・権限設計・PATの更新は運用者が管理します。フックは配布物内の実行可能ファイルを引数配列で起動し、
 payloadからURL・シェルコマンド・実行ユーザー・配備先を指定することはできません。
+
+## ライセンス
+
+nou10本体は [MIT License](LICENSE) で提供します。
 
 ## 参考
 
