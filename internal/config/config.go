@@ -28,7 +28,8 @@ type Config struct {
 	MaxFiles         int           `yaml:"max_files"`
 	InstallRoot      string        `yaml:"install_root"`
 	// Opt in to Git deployments; install_root is the persistent checkout.
-	GitScript string `yaml:"git_script"`
+	GitScript  string `yaml:"git_script"`
+	GitAppSpec string `yaml:"git_appspec"`
 }
 
 func (c Config) Target() protocol.Target {
@@ -72,10 +73,15 @@ func (c Config) Validate() error {
 	if filepath.Clean(c.InstallRoot) != c.InstallRoot || c.InstallRoot == "/" {
 		return errors.New("install_root must be a clean absolute directory other than /")
 	}
-	if c.GitScript != "" && (!filepath.IsLocal(c.GitScript) || filepath.Clean(c.GitScript) != c.GitScript ||
-		c.GitScript == "." || strings.ContainsAny(c.GitScript, "\\:\x00\r\n") || strings.EqualFold(strings.Split(c.GitScript, "/")[0], ".git")) {
-		return errors.New("git_script must be a clean relative file path outside .git")
+	if c.GitScript != "" && c.GitAppSpec != "" {
+		return errors.New("git_script and git_appspec are mutually exclusive")
 	}
+	for key, name := range map[string]string{"git_script": c.GitScript, "git_appspec": c.GitAppSpec} {
+		if name != "" && (!filepath.IsLocal(name) || filepath.Clean(name) != name || name == "." || strings.ContainsAny(name, "\\:\x00\r\n") || strings.EqualFold(strings.Split(name, "/")[0], ".git")) {
+			return fmt.Errorf("%s must be a clean relative file path outside .git", key)
+		}
+	}
+
 	for _, protected := range []string{c.StateDir, c.LockDir, c.TokenFile} {
 		if Contains(c.InstallRoot, protected) || Contains(protected, c.InstallRoot) {
 			return errors.New("install_root must not overlap state_dir, lock_dir or token_file")
@@ -124,3 +130,5 @@ func Contains(root, name string) bool {
 	rel, err := filepath.Rel(root, name)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
+
+func (c Config) GitEnabled() bool { return c.GitScript != "" || c.GitAppSpec != "" }

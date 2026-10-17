@@ -16,3 +16,10 @@ hooks:
   ValidateService:
     - location: scripts/validate.sh
       timeout: 60
+  # Optional notification scripts (same environment as ../git-appspec.yml):
+  # DeploymentSuccess:
+  #   - location: scripts/notify.sh
+  #     timeout: 15
+  # DeploymentFailure:
+  #   - location: scripts/notify.sh
+  #     timeout: 15

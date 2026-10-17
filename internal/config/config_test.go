@@ -92,3 +92,29 @@ func TestGitScriptPath(t *testing.T) {
 		}
 	}
 }
+
+func TestGitAppSpecConfig(t *testing.T) {
+	text := "repository: owner/repo\napplication: app\nenvironment: production\ntoken_file: /etc/nou10/token\ninstall_root: /srv/app\n"
+	path := filepath.Join(t.TempDir(), "config.yml")
+	for _, tc := range []struct {
+		extra string
+		valid bool
+	}{
+		{"git_appspec: deploy/appspec.yml\n", true},
+		{"git_appspec: ../appspec.yml\n", false},
+		{"git_appspec: .git/appspec.yml\n", false},
+		{"git_appspec: /appspec.yml\n", false},
+		{"git_appspec: appspec.yml\ngit_script: deploy.sh\n", false},
+	} {
+		if err := os.WriteFile(path, []byte(text+tc.extra), 0600); err != nil {
+			t.Fatal(err)
+		}
+		c, err := Load(path)
+		if (err == nil) != tc.valid {
+			t.Fatalf("%s: %v", tc.extra, err)
+		}
+		if tc.valid && (!c.GitEnabled() || c.GitAppSpec != "deploy/appspec.yml") {
+			t.Fatal(c)
+		}
+	}
+}

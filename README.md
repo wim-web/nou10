@@ -30,7 +30,7 @@ go build -trimpath -o bin/nou10 ./cmd/nou10
 初回は `initialized deployment baseline; ready for new requests` のログを確認してから要求を作成します。
 初期化前から存在する要求は配備の対象になりません。
 
-ホストでソースからビルドする場合は、Git と [実行スクリプト](examples/git-deploy.sh) を用意し、
+ホストでソースからビルドする場合は、Git と [AppSpec](examples/git-appspec.yml)、[実行スクリプト](examples/git-deploy.sh) を用意し、
 [Git 用 workflow](examples/deploy-git.yml) をアプリの `.github/workflows/deploy.yml` にコピーして調整します。
 
 ビルド済みの配布物を使う場合は、[AppSpec とフック](examples/bundle) を `deploy/` に、

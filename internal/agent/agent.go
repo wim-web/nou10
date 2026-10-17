@@ -157,8 +157,8 @@ func (a *Agent) finish(key, phase, status, summary string) error {
 
 func (a *Agent) execute(ctx context.Context, e *ledger.Entry) error {
 	gitSource := e.Payload.Source == "git"
-	if gitSource != (a.Config.GitScript != "") {
-		return a.finish(e.Key, "done", "error", "source does not match host configuration (git_script selects Git mode)")
+	if gitSource != a.Config.GitEnabled() {
+		return a.finish(e.Key, "done", "error", "source does not match host configuration (git_appspec or git_script selects Git mode)")
 	}
 	jobDir := filepath.Join(a.Config.StateDir, "jobs", strconv.FormatInt(e.Deployment.ID, 10))
 	filename := filepath.Join(jobDir, "bundle.tgz")

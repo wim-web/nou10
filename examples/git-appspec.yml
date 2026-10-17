@@ -1,0 +1,18 @@
+version: 0.0
+os: linux
+# Copy as appspec.yml in the repository; all hook paths are repository-relative.
+hooks:
+  ValidateService:
+    # Copy git-deploy.sh as deploy.sh; it builds, starts, and checks the service.
+    - location: deploy.sh
+      timeout: 600
+  # Optional executable scripts supplied by the application:
+  # DeploymentSuccess:
+  #   - location: deploy/notify.sh
+  #     timeout: 15
+  # DeploymentFailure:
+  #   - location: deploy/notify.sh
+  #     timeout: 15
+# Notification scripts receive LIFECYCLE_EVENT, NOU10_SOURCE_SHA, DEPLOYMENT_ID,
+# NOU10_DEPLOYMENT_STATE, NOU10_DEPLOYMENT_SUMMARY, NOU10_DEPLOYMENT_UNKNOWN.
+# Notification failures are logged without changing the deployment result.

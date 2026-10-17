@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var Events = []string{"ApplicationStop", "BeforeInstall", "AfterInstall", "ApplicationStart", "ValidateService"}
+var Events = []string{"ApplicationStop", "BeforeInstall", "AfterInstall", "ApplicationStart", "ValidateService", "DeploymentSuccess", "DeploymentFailure"}
 
 type Spec struct {
 	Version            string            `yaml:"version"`
