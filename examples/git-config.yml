@@ -7,5 +7,5 @@ lock_dir: /run/nou10
 execution_timeout: 10m
 # Create this directory for the agent user; Git reuses it for every deployment.
 install_root: /srv/myapp/repository
-# Executable, tracked path in the repository. It runs with install_root as cwd.
-git_script: deploy.sh
+# Tracked AppSpec path; hook locations and cwd are relative to install_root.
+git_appspec: appspec.yml

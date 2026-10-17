@@ -241,3 +241,70 @@ func TestGitScriptFailureAndInterruption(t *testing.T) {
 		})
 	}
 }
+
+func TestGitAppSpecNotifications(t *testing.T) {
+	for _, scenario := range []string{"success", "failure", "timeout", "notification failure", "untracked hook", "files", "symlink spec"} {
+		t.Run(scenario, func(t *testing.T) {
+			f := newGitFixture(t)
+			f.config.GitScript = ""
+			f.config.GitAppSpec = "appspec.yml"
+			spec := "version: 0.0\nos: linux\nhooks:\n"
+			for _, event := range []string{"ApplicationStop", "BeforeInstall", "AfterInstall", "ApplicationStart", "ValidateService", "DeploymentSuccess", "DeploymentFailure"} {
+				name := event + ".sh"
+				spec += fmt.Sprintf("  %s:\n    - location: %s\n      timeout: 2\n", event, name)
+				script := "#!/bin/sh\necho \"$LIFECYCLE_EVENT:${NOU10_DEPLOYMENT_STATE:-}\" >> ../events\n"
+				if event == "ValidateService" {
+					if scenario == "failure" {
+						script += "exit 7\n"
+					}
+					if scenario == "timeout" {
+						script += "sleep 30\n"
+						f.config.ExecutionTimeout = time.Second
+					}
+				}
+				if event == "DeploymentSuccess" && scenario == "notification failure" {
+					script += "exit 9\n"
+				}
+				f.write(filepath.Join(f.remote, name), script, 0755)
+			}
+			if scenario == "files" {
+				spec += "files:\n  - source: app/\n    destination: /srv/myapp\n"
+			}
+			f.write(filepath.Join(f.remote, "appspec.yml"), spec, 0644)
+			if scenario == "symlink spec" {
+				os.Remove(filepath.Join(f.remote, "appspec.yml"))
+				if err := os.Symlink("/dev/null", filepath.Join(f.remote, "appspec.yml")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "untracked hook" {
+				os.Remove(filepath.Join(f.remote, "DeploymentSuccess.sh"))
+				f.write(filepath.Join(f.config.InstallRoot, "DeploymentSuccess.sh"), "#!/bin/sh\ntouch ../unsafe\n", 0755)
+			}
+			sha := f.commit("exit 99") // AppSpec must not execute the legacy script.
+			result, log := f.deploy(sha)
+			events, _ := os.ReadFile(filepath.Join(f.dir, "events"))
+			wantState, wantEvent := "success", "DeploymentSuccess:success"
+			switch scenario {
+			case "failure":
+				wantState, wantEvent = "failure", "DeploymentFailure:failure"
+			case "timeout":
+				wantState, wantEvent = "error", "DeploymentFailure:error"
+			case "files", "symlink spec", "untracked hook":
+				if result.State != "error" || len(events) != 0 {
+					t.Fatalf("%+v events=%s\n%s", result, events, log)
+				}
+				return
+			}
+			if result.State != wantState || !strings.HasSuffix(string(events), wantEvent+"\n") || strings.Count(string(events), "Deployment") != 1 {
+				t.Fatalf("%+v events=%s\n%s", result, events, log)
+			}
+			if scenario == "success" && string(events) != "ApplicationStop:\nBeforeInstall:\nAfterInstall:\nApplicationStart:\nValidateService:\nDeploymentSuccess:success\n" {
+				t.Fatal(string(events))
+			}
+			if scenario == "timeout" && !result.Unknown {
+				t.Fatal(result)
+			}
+		})
+	}
+}

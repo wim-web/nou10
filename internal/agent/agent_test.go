@@ -295,7 +295,7 @@ func TestGitDeploymentWithoutAssetsAndAcrossRestarts(t *testing.T) {
 	if err := a.Step(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	a.Config.GitScript = "deploy.sh"
+	a.Config.GitAppSpec = "deploy/appspec.yml"
 	one := gitDeployment(2, "git-one", a.now())
 	two := gitDeployment(3, "git-two", a.now())
 	fx.set(bundle, one, two)
@@ -332,7 +332,7 @@ func TestGitDeploymentWithoutAssetsAndAcrossRestarts(t *testing.T) {
 		t.Fatalf("wrong Git history: %+v", st)
 	}
 	// Bundle ownership history cannot silently be recreated after switching to Git.
-	a.Config.GitScript = ""
+	a.Config.GitAppSpec = ""
 	fx.set(bundle, one, two, duplicate, testutil.Deployment(5, "back-to-bundle", a.now(), fx.bundle))
 	if err := a.Step(context.Background()); err != nil {
 		t.Fatal(err)

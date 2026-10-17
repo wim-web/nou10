@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/wim-web/nou10/internal/appspec"
@@ -26,8 +27,8 @@ func (r Runner) runGit(ctx context.Context, request Request, root *os.Root, log 
 		}
 		return Result{State: "error", Summary: "Git source preparation failed; inspect deploy.log"}
 	}
-	if r.Config.GitScript == "" || !protocol.ValidSHA(request.SourceSHA) || !protocol.ValidRepository(r.Config.Repository) {
-		return fail(errors.New("Git source requires git_script, repository and a full commit SHA"))
+	if !r.Config.GitEnabled() || !protocol.ValidSHA(request.SourceSHA) || !protocol.ValidRepository(r.Config.Repository) {
+		return fail(errors.New("Git source requires git_appspec or git_script, repository and a full commit SHA"))
 	}
 	info, err := root.Lstat(".git")
 	if errors.Is(err, os.ErrNotExist) {
@@ -65,6 +66,9 @@ func (r Runner) runGit(ctx context.Context, request Request, root *os.Root, log 
 	// Git normally overwrites ignored files on checkout; .env must be preserved.
 	if _, err := r.git(ctx, log, false, "checkout", "--detach", "--no-overwrite-ignore", request.SourceSHA, "--"); err != nil {
 		return fail(err)
+	}
+	if r.Config.GitAppSpec != "" {
+		return r.runGitAppSpec(ctx, request, root, log)
 	}
 	if _, err := r.git(ctx, log, false, "ls-files", "--error-unmatch", "--", r.Config.GitScript); err != nil {
 		return fail(errors.New("git_script must be tracked in the requested commit"))
@@ -110,4 +114,67 @@ func (r Runner) git(ctx context.Context, log io.Writer, authenticated bool, args
 		return "", fmt.Errorf("git %s: %w", args[0], err)
 	}
 	return strings.TrimSpace(output.String()), nil
+}
+
+func (r Runner) runGitAppSpec(ctx context.Context, request Request, root *os.Root, log *os.File) (out Result) {
+	fail := func(err error) Result {
+		fmt.Fprintln(log, err)
+		return Result{State: "error", Summary: "invalid Git AppSpec; inspect deploy.log"}
+	}
+	name := r.Config.GitAppSpec
+	if err := cleanPath(root, name); err != nil {
+		return fail(err)
+	}
+	info, err := root.Lstat(name)
+	if err != nil {
+		return fail(err)
+	}
+	if !info.Mode().IsRegular() {
+		return fail(errors.New("AppSpec must be a regular file"))
+	}
+	if _, err := r.git(ctx, log, false, "ls-files", "--error-unmatch", "--", name); err != nil {
+		return fail(err)
+	}
+	f, err := root.Open(name)
+	if err != nil {
+		return fail(err)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, (1<<20)+1))
+	f.Close()
+	if err != nil {
+		return fail(err)
+	}
+	spec, err := appspec.Parse(data)
+	if err != nil {
+		return fail(err)
+	}
+	// Git owns checkout files; the bundle installation ledger cannot track them.
+	if len(spec.Files) != 0 || len(spec.Permissions) != 0 {
+		return fail(errors.New("Git AppSpec does not support files or permissions"))
+	}
+	archive := r.Config.InstallRoot
+	for _, hooks := range spec.Hooks {
+		if err := checkHooks(archive, hooks); err != nil {
+			return fail(err)
+		}
+		for _, hook := range hooks {
+			if strings.EqualFold(strings.Split(filepath.ToSlash(hook.Location), "/")[0], ".git") {
+				return fail(errors.New("hooks must be outside .git"))
+			}
+			if _, err := r.git(ctx, log, false, "ls-files", "--error-unmatch", "--", hook.Location); err != nil {
+				return fail(err)
+			}
+		}
+	}
+	defer func() { r.notify(ctx, request, archive, spec, out, log) }()
+	// The checkout is updated in place: all hooks belong to the requested commit.
+	for _, event := range []string{"ApplicationStop", "BeforeInstall", "AfterInstall", "ApplicationStart", "ValidateService"} {
+		if result := r.runEvent(ctx, request, archive, event, spec.Hooks[event], log); result != nil {
+			return *result
+		}
+	}
+	if ctx.Err() != nil {
+		return interrupted()
+	}
+	return Result{State: "success", Summary: "Git checkout and AppSpec deployment completed"}
 }

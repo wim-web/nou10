@@ -29,6 +29,7 @@ type Request struct {
 	BundlePath, JobDir, SourceSHA string
 	DeploymentID                  int64
 	PreviousJobDir                string
+	result                        *Result
 }
 type Executor interface {
 	Run(context.Context, Request) Result
@@ -36,7 +37,7 @@ type Executor interface {
 type Runner struct{ Config config.Config }
 
 func Check(_ context.Context, c config.Config) error {
-	if c.GitScript != "" {
+	if c.GitEnabled() {
 		if _, err := exec.LookPath("git"); err != nil {
 			return errors.New("Git source requires git on the host")
 		}
@@ -69,7 +70,7 @@ func Check(_ context.Context, c config.Config) error {
 	return f.Close()
 }
 
-func (r Runner) Run(parent context.Context, request Request) Result {
+func (r Runner) Run(parent context.Context, request Request) (out Result) {
 	log, err := os.OpenFile(filepath.Join(request.JobDir, "deploy.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return Result{State: "error", Summary: "cannot open deployment log"}
@@ -92,7 +93,7 @@ func (r Runner) Run(parent context.Context, request Request) Result {
 	if request.Source == "git" {
 		return r.runGit(ctx, request, root, log)
 	}
-	if request.Source != "" || r.Config.GitScript != "" {
+	if request.Source != "" || r.Config.GitEnabled() {
 		return fail("source does not match host configuration", errors.New("invalid source"))
 	}
 	archive := filepath.Join(request.JobDir, "archive")
@@ -126,6 +127,7 @@ func (r Runner) Run(parent context.Context, request Request) Result {
 			return fail("invalid hook", err)
 		}
 	}
+	defer func() { r.notify(ctx, request, archive, spec, out, log) }()
 	if _, _, err := planFiles(ctx, archive, root, spec, previous); err != nil {
 		return fail("invalid file installation plan", err)
 	}
@@ -285,6 +287,9 @@ func (r Runner) runEvent(ctx context.Context, request Request, archive, event st
 			"APPLICATION_NAME=" + r.Config.Application, "DEPLOYMENT_ID=" + strconv.FormatInt(request.DeploymentID, 10),
 			"DEPLOYMENT_GROUP_ID=" + r.Config.Target().Key(), "DEPLOYMENT_GROUP_NAME=" + r.Config.Application + "-" + r.Config.Environment,
 			"LIFECYCLE_EVENT=" + event, "NOU10_SOURCE_SHA=" + request.SourceSHA}
+		if request.result != nil {
+			cmd.Env = append(cmd.Env, "NOU10_DEPLOYMENT_STATE="+request.result.State, "NOU10_DEPLOYMENT_SUMMARY="+request.result.Summary, "NOU10_DEPLOYMENT_UNKNOWN="+strconv.FormatBool(request.result.Unknown))
+		}
 		processGroup(cmd)
 		err := cmd.Run()
 		interruptedRun := childCtx.Err() != nil
@@ -321,4 +326,24 @@ func processGroup(cmd *exec.Cmd) {
 		return err
 	}
 	cmd.WaitDelay = 5 * time.Second
+}
+
+// Notification delivery is best effort and must not change deployment history.
+// Give it a separate bounded budget even when deployment execution timed out.
+func (r Runner) notify(ctx context.Context, request Request, archive string, spec *appspec.Spec, result Result, log *os.File) {
+	event := "DeploymentFailure"
+	if result.State == "success" {
+		event = "DeploymentSuccess"
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+	request.result = &result
+	for _, hook := range spec.Hooks[event] {
+		if failure := r.runEvent(ctx, request, archive, event, []appspec.Hook{hook}, log); failure != nil {
+			fmt.Fprintf(log, "notification failed: %s\n", failure.Summary)
+		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
 }

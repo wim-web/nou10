@@ -337,3 +337,27 @@ func TestDoctorChecksInstallRootWithoutCodeDeploy(t *testing.T) {
 		t.Fatal("symlink install_root accepted")
 	}
 }
+
+func TestBundleNotificationsPreserveResult(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+			f := newFixture(t)
+			files := f.files("one")
+			files = change(files, "appspec.yml", func(s string) string {
+				return s + "  DeploymentSuccess:\n    - location: scripts/notify.sh\n  DeploymentFailure:\n    - location: scripts/notify.sh\n"
+			})
+			files = append(files, testutil.File{Name: "scripts/notify.sh", Data: fmt.Sprintf("#!/bin/sh\necho \"$LIFECYCLE_EVENT:$NOU10_DEPLOYMENT_STATE\" >> %s\nexit 9\n", filepath.Join(f.dir, "events.log"))})
+			if fail {
+				files = change(files, "scripts/ValidateService.sh", func(s string) string { return s + "exit 7\n" })
+			}
+			result := f.run(files)
+			state, event := "success", "DeploymentSuccess:success\n"
+			if fail {
+				state, event = "failure", "DeploymentFailure:failure\n"
+			}
+			if result.State != state || result.Unknown || !strings.HasSuffix(f.events(), event) {
+				t.Fatalf("%+v events=%s", result, f.events())
+			}
+		})
+	}
+}

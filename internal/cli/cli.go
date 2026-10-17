@@ -112,7 +112,7 @@ func deploy(ctx context.Context, args []string, out, errOut io.Writer) error {
 	f.StringVar(&env, "environment", "", "exact target environment")
 	f.StringVar(&task, "task", protocol.DefaultTask, "deployment task")
 	f.StringVar(&sha, "sha", "", "full 40-character source commit SHA")
-	f.StringVar(&source, "source", "bundle", "bundle (Release asset) or git (host checkout and configured git_script)")
+	f.StringVar(&source, "source", "bundle", "bundle (Release asset) or git (host checkout and configured git_appspec or git_script)")
 	f.StringVar(&digest, "sha256", "", "tgz SHA-256 (lowercase hex)")
 	f.StringVar(&requestID, "request-id", "", "idempotency key (defaults to GHA run/attempt/target)")
 	f.StringVar(&startBefore, "start-before", "", "explicit RFC3339 UTC start deadline")
