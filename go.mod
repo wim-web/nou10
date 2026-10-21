@@ -1,6 +1,6 @@
 module github.com/wim-web/nou10
 
-go 1.25.0
+go 1.27.3
 
 require (
 	go.etcd.io/bbolt v1.4.3
