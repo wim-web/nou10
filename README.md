@@ -6,7 +6,7 @@ SSH や受信ポートを用意せずに、GitHub-hosted Actions から配備し
 
 ## 利用開始
 
-ソースからビルドする場合:
+ソースからビルドする場合は Go 1.27.3 以上を使用します:
 
 ```sh
 go build -trimpath -o bin/nou10 ./cmd/nou10
