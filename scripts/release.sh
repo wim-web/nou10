@@ -57,8 +57,6 @@ case "$action" in
         CGO_ENABLED=0 GOOS="$platform" GOARCH="$arch" \
           go build -trimpath -ldflags "-s -w -X main.version=$version" \
           -o "$package_dir/nou10" ./cmd/nou10
-        # Record the compiler embedded in each archive, including cross builds.
-        go version -m "$package_dir/nou10"
         cp LICENSE README.md "$package_dir/"
         cp -R docs examples "$package_dir/"
         # COPYFILE_DISABLE prevents macOS metadata entries in local builds.
