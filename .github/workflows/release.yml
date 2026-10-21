@@ -6,9 +6,6 @@ on:
 permissions:
   contents: read
 
-env:
-  GOTOOLCHAIN: local
-
 concurrency:
   group: release-main
   cancel-in-progress: false

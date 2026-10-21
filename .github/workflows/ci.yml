@@ -11,9 +11,6 @@ on:
         type: string
 permissions:
   contents: read
-
-env:
-  GOTOOLCHAIN: local
 jobs:
   test:
     runs-on: ubuntu-24.04
