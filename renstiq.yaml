@@ -1,0 +1,44 @@
+version: 2
+enabled: true
+
+github_api_read_retry:
+  max_attempts: 3
+  interval_seconds: 2
+  respect_retry_after: true
+
+merge:
+  method: squash
+
+rules:
+  - id: major-update
+    authors: [app/renovate, 'renovate[bot]']
+    base_branches: [main]
+    labels: [major]
+    instructions: |
+      更新内容、公式リリースノート、破壊的変更とこのrepoでの利用箇所を調査し、既存機能への影響がないと判断できればマージする。
+      CIの状態にかかわらず調査を実施し、影響がある場合や判断できない場合はマージしない。
+      CIがある場合は最新のHEADに対する必要なcheckがすべて成功し、ほかのcheckにも失敗や未完了がないことを確認する。
+      PR向けCIが存在しない場合は、最新のHEADでrepoの検証手順に従って影響範囲を検証し、成功した場合だけマージする。
+      draft、競合あり、必要な検証の未実行・失敗・未完了の場合はマージしない。
+      Renovate以外の変更履歴、コメント等がある場合はマージしない。
+
+  - id: minor-patch-update
+    authors: [app/renovate, 'renovate[bot]']
+    base_branches: [main]
+    labels: [minor, patch]
+    instructions: |
+      CIがある場合は最新のHEADに対する必要なcheckがすべて成功し、ほかのcheckにも失敗や未完了がなければマージする。
+      PR向けCIが存在しない場合は、最新のHEADでrepoの検証手順に従って影響範囲を検証し、成功した場合だけマージする。
+      draft、競合あり、必要な検証の未実行・失敗・未完了の場合はマージしない。
+      Renovate以外の変更履歴、コメント等がある場合はマージしない。
+
+  - id: other-renovate
+    authors: [app/renovate, 'renovate[bot]']
+    base_branches: [main]
+    instructions: |
+      調査をせずにスキップする。
+
+on_blocked:
+  - id: report-blocked
+    instructions: |
+      マージを見送った理由を実行結果に記録する。
