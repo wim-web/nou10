@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/wim-web/nou10/compare/v0.2.1...v0.2.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **deps:** update module go.etcd.io/bbolt to v1.5.0 ([#16](https://github.com/wim-web/nou10/issues/16)) ([fb58464](https://github.com/wim-web/nou10/commit/fb58464344d5dd863ba53d4fed753862725599be))
+
 ## [0.2.1](https://github.com/wim-web/nou10/compare/v0.2.0...v0.2.1) (2026-10-21)
 
 
